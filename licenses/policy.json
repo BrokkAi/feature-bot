@@ -1,0 +1,60 @@
+{
+  "go_version": "1.27.1",
+  "project_license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+  "modules": {
+    "github.com/BrokkAi/acp-go": {
+      "version": "v0.1.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/BrokkAi/acp-go/tree/v0.1.0",
+      "files": {
+        "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    },
+    "github.com/rivo/uniseg": {
+      "version": "v0.4.7",
+      "license": "MIT AND Unicode-3.0",
+      "source": "https://github.com/rivo/uniseg/tree/v0.4.7",
+      "files": {
+        "LICENSE.txt": "a59885f5f0f3b3c07cf9444db5fe399b6f0791eac82055f7b85cc65500551039"
+      }
+    },
+    "golang.org/x/sys": {
+      "version": "v0.46.0",
+      "license": "BSD-3-Clause",
+      "source": "https://cs.opensource.google/go/x/sys/+/v0.46.0",
+      "files": {
+        "LICENSE": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+        "PATENTS": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+      }
+    },
+    "golang.org/x/term": {
+      "version": "v0.44.0",
+      "license": "BSD-3-Clause",
+      "source": "https://cs.opensource.google/go/x/term/+/v0.44.0",
+      "files": {
+        "LICENSE": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+        "PATENTS": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+      }
+    }
+  },
+  "supplemental": [
+    {
+      "file": "licenses/GO_LICENSE.txt",
+      "title": "Go runtime and standard library (BSD-3-Clause)",
+      "source": "https://go.googlesource.com/go/+/refs/tags/go1.27.1/LICENSE",
+      "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    },
+    {
+      "file": "licenses/GO_PATENTS.txt",
+      "title": "Go additional patent grant",
+      "source": "https://go.googlesource.com/go/+/refs/tags/go1.27.1/PATENTS",
+      "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+    },
+    {
+      "file": "licenses/UNICODE_LICENSE.txt",
+      "title": "Unicode data used by Go and uniseg (Unicode-3.0)",
+      "source": "https://www.unicode.org/license.txt",
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+    }
+  ]
+}

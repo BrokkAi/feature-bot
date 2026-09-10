@@ -1,0 +1,17 @@
+{
+  "remote": "https://github.com/OWNER/REPO.git",
+  "branch": "main",
+  "directory": "var/checkout",
+  "state_directory": "var/state",
+  "instruction_files": ["AGENTS.md", "CONTRIBUTING.md", "README.md"],
+  "poll": "30m",
+  "timeout": "2h",
+  "retry_delay": "15m",
+  "attempts": 3,
+  "max_issues": 3,
+  "focus": "",
+  "labels": [],
+  "dry_run": false,
+  "agent": {"command": ["codex-acp"]},
+  "github": {"host": "github.com"}
+}

@@ -1,0 +1,29 @@
+name: CI
+on: [push, pull_request, workflow_dispatch, workflow_call]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - name: Check dependency licenses and notices
+        run: python3 scripts/licenses.py
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -o bin/bfb ./cmd/bfb
+      - run: ./bin/bfb --help
+      - run: sh -n install.sh
+      - run: python3 -m unittest discover -s scripts -p '*_test.py'
+      - run: node --test --test-isolation=none npm/bfb.test.cjs
+      - run: python3 scripts/smoke_installers.py
