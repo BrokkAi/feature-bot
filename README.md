@@ -1,5 +1,7 @@
 # Brokk Feature Bot
 
+<img src="https://raw.githubusercontent.com/BrokkAi/feature-bot/master/docs/feature-reader.png" alt="Studious feature bot with glasses and an open book" width="200">
+
 Research valuable new features in a repository and file concrete GitHub proposals.
 `bfb` is modeled on [bug-bot](https://github.com/BrokkAi/bug-bot) (`bbb`), with a
 feature-specific research prompt, proposal schema, and independent state. It follows
@@ -17,11 +19,10 @@ refactors-only, speculative wishlists, and previously rejected features are excl
 
 ## Install and run
 
-The initial implementation and release packaging are prepared locally; no public
-Feature Bot repository or npm release has been published yet. The npm, native
-installer and versioned Go commands below describe the intended distribution once
-the first release is published. To use this checkout now, run `make build` and
-`./bin/bfb --help`.
+The initial prerelease is `v0.1.0-rc.1`, available under npm's `next` channel
+once its publication completes. Use `npm install -g @brokkai/feature-bot@next`
+for prereleases. The stable installation commands below become available when a
+stable release is published. To build a source checkout, run `make build`.
 
 Install with npm (Node.js 18+; no Go toolchain required):
 
