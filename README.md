@@ -190,6 +190,28 @@ paths using the same state home. Different machines/accounts and simultaneous
 human reports cannot be locked atomically with GitHub issue creation. Run one
 active `bfb` per repository to avoid that race.
 
+## Brokk Town worker service
+
+`bfb worker --socket PATH` serves one-shot feature research operations to Brokk
+Town over a private Unix-domain socket. The socket is mode `0600`; the endpoint is
+private to the local service, and the process exits after Town requests shutdown.
+
+Worker protocol v1 uses standard-library HTTP with JSON messages:
+
+- `GET /v1/initialize` returns the protocol range, bot identity, release version,
+  and capabilities. Town requires `feature-research` as well as common `run` and
+  `progress` capabilities.
+- `POST /v1/runs` accepts one strict JSON task and responds with contiguous
+  newline-delimited JSON events: `progress`, optional typed `result`,
+  and `error`, `canceled`, or `complete`.
+- `POST /v1/shutdown` asks the service to stop after the current stream.
+
+Version and capability negotiation happen before work starts. Town does not read
+this bot's private state files; issue and review outcomes are explicit protocol
+results when applicable, while GitHub remains the durable source for receipts.
+The schemas are independent of the Unix HTTP transport, allowing an authenticated
+TLS transport to be added later without changing worker semantics.
+
 ## Optional configuration
 
 `bfb --config feature-bot.json` loads a strict JSON object. No file is loaded or
