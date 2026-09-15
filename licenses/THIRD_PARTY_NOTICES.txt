@@ -8,9 +8,9 @@ Node.js and Python interpreters are installed separately and are not bundled.
 
 ==============================================================================
 
-github.com/BrokkAi/acp-go v0.1.0
+github.com/BrokkAi/acp-go v0.7.0
 License: Apache-2.0
-Source: https://github.com/BrokkAi/acp-go/tree/v0.1.0
+Source: https://github.com/BrokkAi/acp-go/tree/v0.7.0
 
 ==============================================================================
 
@@ -218,6 +218,25 @@ Source: https://github.com/BrokkAi/acp-go/tree/v0.1.0
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+==============================================================================
+
+--- github.com/BrokkAi/acp-go/NOTICE ---
+
+acp-go
+Copyright 2026 Brokk.ai and contributors
+
+This project is licensed under the Apache License, Version 2.0.
+See LICENSE for the full terms. Third-party terms and attribution are
+provided in licenses/THIRD_PARTY_NOTICES.txt.
+
+Originally developed as part of BrokkAi/release-bot.
+
+The pinned Agent Client Protocol JSON Schema artifacts in schema/
+(schema.json, meta.json, VERSION) are distributed by the ACP project
+(https://github.com/agentclientprotocol/agent-client-protocol) under the
+Apache License 2.0. The generated code in schema/*_gen.go derives from
+those artifacts.
 
 ==============================================================================
 
