@@ -168,6 +168,18 @@ def request_json(url, token, method='GET'):
         return json.load(response)
 
 
+def check_subject(claims, repository):
+    owner_id, repo_id = str(repository['owner']['id']), str(repository['id'])
+    subjects = {
+        f'repo:{REPO}:environment:packages-publish',
+        f'repo:BrokkAi@{owner_id}/feature-bot@{repo_id}:environment:packages-publish',
+    }
+    require(claims.get('repository') == REPO and
+        str(claims.get('repository_owner_id')) == owner_id and
+        str(claims.get('repository_id')) == repo_id and
+        claims.get('sub') in subjects, 'wrong OIDC repository or environment')
+
+
 def authorization(sha, tag, root):
     require(os.environ.get('GITHUB_ACTIONS') == 'true', 'authorization must run in the publishing Actions job')
     require(os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_SHA'] == sha, 'wrong Actions repository or SHA')
@@ -176,7 +188,7 @@ def authorization(sha, tag, root):
     token = request_json(url, os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN'])['value']
     encoded = token.split('.')[1]
     claims = json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
-    require(claims['sub'] == f'repo:{REPO}:environment:packages-publish', 'wrong OIDC environment')
+    check_subject(claims, api(f'repos/{REPO}'))
     require(claims['workflow_ref'].startswith(f'{REPO}/.github/workflows/publish-packages.yml@'), 'wrong publishing workflow')
     require(claims['sha'] == sha and claims['aud'] == 'npm:registry.npmjs.org', 'wrong OIDC commit or audience')
     expiries = []
