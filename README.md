@@ -139,7 +139,13 @@ existing output and never open the dashboard.
 4. Start separate LLM review sessions to verify the evidence and compare each
    candidate against the issue history. Large histories are supplied in batches;
    every issue and comment is included, and each response must identify all issue
-   numbers it reviewed. A duplicate verdict links the existing report in local
+   numbers it reviewed. Coverage errors report the expected count and missing,
+   repeated, and unexpected numbers (up to 20 per category). A rejected coverage
+   receipt gets one corrective attempt with the required number set and validation
+   error. Successful batches are saved and reused after restart when their content,
+   candidate, and source revision still match; changed batches are reviewed again.
+   Exhausted corrections leave the candidate pending and block publication.
+   A duplicate verdict links the existing report in local
    state. Uncertain and invalid findings are saved without filing.
 5. Refresh issues before publication. New or edited reports go back to the LLM
    for comparison. Recheck the source commit and tracked files. An optional
