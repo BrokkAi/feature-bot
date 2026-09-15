@@ -27,10 +27,18 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 	if fs.NArg() != 0 || *socket == "" {
 		return fmt.Errorf("worker requires exactly one --socket PATH")
 	}
-	return worker.Serve(ctx, *socket, worker.Initialize{
+	return worker.Serve(ctx, *socket, workerInfo(version), workerRun(bot.Run), slog.Default())
+}
+
+func workerInfo(version string) worker.Initialize {
+	return worker.Initialize{
 		Protocol: worker.ProtocolVersion, MinimumProtocol: worker.MinimumProtocol,
-		Bot: "feature-bot", Version: version, Capabilities: []string{"run", "progress", "feature-research"},
-	}, func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
+		Bot: "feature-bot", Version: version, Capabilities: []string{"run", "progress", "feature-research", "feature-research-controls"},
+	}
+}
+
+func workerRun(run runFunc) worker.RunFunc {
+	return func(ctx context.Context, request worker.Request, progress func(worker.Progress)) (worker.Result, error) {
 		cfg := bot.DefaultConfig()
 		cfg.Remote = request.Remote
 		cfg.Branch = request.Branch
@@ -40,9 +48,18 @@ func workerCommand(ctx context.Context, args []string, version string) error {
 		cfg.GitHub.Repo = request.Repo
 		cfg.GitHub.Host = request.Host
 		cfg.Verify = request.Verify
+		if options := request.FeatureResearch; options != nil {
+			cfg.Focus = options.Focus
+			if options.MaxIssues != nil {
+				cfg.MaxIssues = *options.MaxIssues
+			}
+		}
+		if err := cfg.Validate(); err != nil {
+			return worker.Result{}, err
+		}
 		ctx = bot.WithProgress(ctx, func(p bot.Progress) {
 			progress(worker.Progress{Phase: p.Phase, Task: p.Task})
 		})
-		return worker.Result{}, bot.Run(ctx, cfg, slog.Default(), true)
-	}, slog.Default())
+		return worker.Result{}, run(ctx, cfg, slog.Default(), true)
+	}
 }

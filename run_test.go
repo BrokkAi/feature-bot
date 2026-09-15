@@ -88,6 +88,7 @@ func (f *fakeSource) create(_ context.Context, c *Candidate, commit string) (*Is
 
 type fakeAgent struct {
 	scans, reviews int
+	scanPrompt     string
 	findings       []Finding
 	onReview       func([]Issue) Review
 	onScan         func()
@@ -100,6 +101,7 @@ func (a *fakeAgent) Execute(_ context.Context, prompt string) (string, error) {
 	}
 	if strings.Contains(prompt, "Scan context (data):") {
 		a.scans++
+		a.scanPrompt = prompt
 		if a.onScan != nil {
 			a.onScan()
 		}
@@ -429,6 +431,64 @@ func TestOperatorVerifierFailureStopsPublication(t *testing.T) {
 	}
 	if f.creates != 0 {
 		t.Fatal("failed verification still published")
+	}
+}
+
+func TestResearchControlsFreshScan(t *testing.T) {
+	for _, count := range []int{0, 1, 2} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			e, s, f, a, _ := fixture(t)
+			e.config.Focus = "onboarding"
+			e.config.MaxIssues = 1
+			a.findings = make([]Finding, count)
+			for i := range a.findings {
+				a.findings[i] = finding()
+			}
+			err := e.step(context.Background(), s, true)
+			if !strings.Contains(a.scanPrompt, `"Focus": "onboarding"`) || !strings.Contains(a.scanPrompt, `"MaxIssues": 1`) {
+				t.Fatalf("research controls missing from prompt: %s", a.scanPrompt)
+			}
+			if count > 1 {
+				if err == nil || !strings.Contains(err.Error(), "max_issues") || a.reviews != 0 || f.creates != 0 {
+					t.Fatalf("excess receipt: err=%v reviews=%d creates=%d", err, a.reviews, f.creates)
+				}
+			} else if err != nil || f.creates != count {
+				t.Fatalf("valid receipt: err=%v creates=%d", err, f.creates)
+			}
+		})
+	}
+}
+
+func TestResearchControlsPreserveDiscoveredCandidates(t *testing.T) {
+	e, s, f, a, _ := fixture(t)
+	second := finding()
+	second.Title = "Export selected tasks"
+	a.findings = []Finding{finding(), second}
+	f.createErr = &rejectedCreateError{errors.New("permission denied")}
+	if err := e.step(context.Background(), s, true); err == nil {
+		t.Fatal("expected publication failure")
+	}
+	saved, err := ReadState(e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.Scan.Discovered || len(saved.Scan.Candidates) != 2 {
+		t.Fatal("discovery was not saved")
+	}
+	ids := []string{saved.Scan.Candidates[0].RequestID, saved.Scan.Candidates[1].RequestID}
+	e.config.Focus = "onboarding"
+	e.config.MaxIssues = 1
+	f.createErr = nil
+	if err := e.step(context.Background(), saved, true); err != nil {
+		t.Fatal(err)
+	}
+	if a.scans != 1 || len(saved.Completed) != 2 || a.reviews < 2 {
+		t.Fatalf("saved work changed: scans=%d reviews=%d completed=%d", a.scans, a.reviews, len(saved.Completed))
+	}
+	for i, c := range saved.Completed {
+		if c.RequestID != ids[i] {
+			t.Fatal("saved candidate replaced")
+		}
 	}
 }
 

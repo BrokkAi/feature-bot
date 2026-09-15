@@ -211,11 +211,42 @@ Worker protocol v1 uses standard-library HTTP with JSON messages:
 
 - `GET /v1/initialize` returns the protocol range, bot identity, release version,
   and capabilities. Town requires `feature-research` as well as common `run` and
-  `progress` capabilities.
+  `progress` capabilities. Workers supporting optional discovery controls also
+  advertise `feature-research-controls`.
 - `POST /v1/runs` accepts one strict JSON task and responds with contiguous
   newline-delimited JSON events: `progress`, optional typed `result`,
   and `error`, `canceled`, or `complete`.
 - `POST /v1/shutdown` asks the service to stop after the current stream.
+
+A run request may include the optional `feature_research` object alongside its
+repository and agent settings, for example:
+
+```json
+{
+  "protocol": 1,
+  "remote": "https://github.com/OWNER/REPO.git",
+  "branch": "main",
+  "directory": "/srv/bfb/checkout",
+  "state_directory": "/srv/bfb/state",
+  "repo": "OWNER/REPO",
+  "host": "github.com",
+  "agent": {"command": ["codex-acp"]},
+  "feature_research": {"focus": "onboarding", "max_issues": 1}
+}
+```
+
+`focus` is a string and defaults to empty (unrestricted research). `max_issues`
+is an integer from 1 through 20 and defaults to 3 when omitted; explicit zero
+is invalid. Either field may be omitted, and each request starts with fresh
+defaults. Unknown fields and incorrect types are rejected. A fresh discovery
+prompt receives these settings and its receipt may contain zero findings, but
+cannot exceed the maximum.
+
+These options follow CLI `--focus` and `--max-issues` semantics: they control
+discovery. Resuming an already-discovered scan preserves its saved candidates;
+new options do not redirect research, regenerate or truncate that saved work.
+Reconciliation, independent review and publication gates continue to apply.
+Clients must detect the capability and include the optional fields to use them.
 
 Version and capability negotiation happen before work starts. Town does not read
 this bot's private state files; issue and review outcomes are explicit protocol
