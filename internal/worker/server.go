@@ -38,19 +38,27 @@ type Initialize struct {
 	Capabilities    []string `json:"capabilities"`
 }
 
+// FeatureResearch controls discovery; it does not replace saved scan candidates.
+type FeatureResearch struct {
+	Focus string `json:"focus,omitempty"`
+	// A nil maximum preserves the default; an explicit zero must fail validation.
+	MaxIssues *int `json:"max_issues,omitempty"`
+}
+
 type Request struct {
-	Protocol       int                `json:"protocol"`
-	Remote         string             `json:"remote"`
-	Branch         string             `json:"branch"`
-	Directory      string             `json:"directory"`
-	StateDirectory string             `json:"state_directory"`
-	Repo           string             `json:"repo"`
-	Host           string             `json:"host"`
-	Agent          runner.AgentConfig `json:"agent"`
-	Verify         []string           `json:"verify,omitempty"`
-	PR             int                `json:"pr,omitempty"`
-	BaseSHA        string             `json:"base_sha,omitempty"`
-	HeadSHA        string             `json:"head_sha,omitempty"`
+	FeatureResearch *FeatureResearch   `json:"feature_research,omitempty"`
+	Protocol        int                `json:"protocol"`
+	Remote          string             `json:"remote"`
+	Branch          string             `json:"branch"`
+	Directory       string             `json:"directory"`
+	StateDirectory  string             `json:"state_directory"`
+	Repo            string             `json:"repo"`
+	Host            string             `json:"host"`
+	Agent           runner.AgentConfig `json:"agent"`
+	Verify          []string           `json:"verify,omitempty"`
+	PR              int                `json:"pr,omitempty"`
+	BaseSHA         string             `json:"base_sha,omitempty"`
+	HeadSHA         string             `json:"head_sha,omitempty"`
 }
 
 type Progress struct {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -152,3 +153,50 @@ func TestShutdownEndpointStopsServe(t *testing.T) {
 		t.Fatalf("shutdown returned HTTP %d", response.StatusCode)
 	}
 }
+
+func TestResearchRequestStrictDecoding(t *testing.T) {
+	for _, tc := range []struct {
+		body, wantError string
+		focus           string
+		max             *int
+	}{
+		{body: `{"protocol":1}`},
+		{body: `{"protocol":1,"feature_research":{}}`},
+		{body: `{"protocol":1,"feature_research":{"focus":"onboarding","max_issues":1}}`, focus: "onboarding", max: intPointer(1)},
+		{body: `{"protocol":1,"feature_research":{"max_issues":0}}`, max: intPointer(0)},
+		{body: `{"protocol":1,"feature_research":{"unknown":1}}`, wantError: `unknown field "unknown"`},
+		{body: `{"protocol":1,"feature_research":{"focus":1}}`, wantError: "focus"},
+		{body: `{"protocol":1,"feature_research":{"max_issues":"1"}}`, wantError: "max_issues"},
+		{body: `{"protocol":1,"feature_research":{"max_issues":1.5}}`, wantError: "max_issues"},
+		{body: `{"protocol":1,"feature_research":{"max_issues":true}}`, wantError: "max_issues"},
+		{body: `{"protocol":1,"feature_research":[]}`, wantError: "feature_research"},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			called := false
+			s := &server{run: func(_ context.Context, r Request, _ func(Progress)) (Result, error) {
+				called = true
+				options := r.FeatureResearch
+				if options == nil {
+					options = &FeatureResearch{}
+				}
+				if options.Focus != tc.focus || (options.MaxIssues == nil) != (tc.max == nil) || (tc.max != nil && *options.MaxIssues != *tc.max) {
+					t.Fatalf("decoded options: %+v", options)
+				}
+				return Result{}, nil
+			}}
+			req := httptest.NewRequest(http.MethodPost, "/v1/runs", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			s.handler().ServeHTTP(response, req)
+			if tc.wantError != "" {
+				if called || response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), tc.wantError) {
+					t.Fatalf("called=%v response=%d %s", called, response.Code, response.Body)
+				}
+			} else if !called || response.Code != http.StatusOK {
+				t.Fatalf("response=%d %s", response.Code, response.Body)
+			}
+		})
+	}
+}
+
+func intPointer(n int) *int { return &n }
