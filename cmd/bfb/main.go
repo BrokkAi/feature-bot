@@ -52,17 +52,18 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			return versionCommand(args[1:], os.Stdout)
 		case "worker":
 			return workerCommand(ctx, args[1:], buildVersion())
-		case "run", "once", "status", "retry":
+		case "run", "once", "status", "report", "retry":
 			mode = args[0]
 			args = args[1:]
 		}
 	}
 	fs := flag.NewFlagSet("bfb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|retry|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
 		fs.PrintDefaults()
 	}
 	file := fs.String("config", "", "optional JSON configuration")
+	reportStatus := fs.String("status", "", "report only: filter by saved candidate status (e.g. dry_run)")
 	branch := fs.String("branch", "", "base branch (default: repository default)")
 	agent := fs.String("agent", "", "ACP executable (default: codex-acp or npx)")
 	model := fs.String("model", "", "agent model ID")
@@ -94,6 +95,20 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	}
 	if fs.NArg() > 1 {
 		return errors.New("pass one repository path or URL")
+	}
+	if mode == "report" {
+		if err := bot.ValidateReportStatus(*reportStatus); err != nil {
+			return err
+		}
+	} else {
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "status" {
+				result = errors.New("--status is only supported by report")
+			}
+		})
+		if result != nil {
+			return result
+		}
 	}
 	var cfg bot.Config
 	var err error
@@ -150,10 +165,13 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	if cfg.GitHubRepo() == "" {
 		return errors.New("GitHub remote required; set github.repo for a local mirror")
 	}
-	if mode == "status" {
+	if mode == "status" || mode == "report" {
 		s, err := bot.ReadState(cfg)
 		if err != nil {
 			return err
+		}
+		if mode == "report" {
+			return bot.WriteReport(os.Stdout, cfg, s, *reportStatus)
 		}
 		e := json.NewEncoder(os.Stdout)
 		e.SetIndent("", "  ")

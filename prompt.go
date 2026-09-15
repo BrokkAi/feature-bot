@@ -44,6 +44,11 @@ without a new user-facing capability. Distinguish source-backed observations fro
 user demand, usage metrics, maintainer endorsement, or successful tests.
 `
 
+const (
+	scanReceipt   = `FEATURE_RESULT {"summary":"Purpose, workflows and areas inspected, checks performed and limitations","findings":[{"title":"Concise feature title","user_problem":"Specific unmet goal and intended user","current_workflow":"Existing workflow or workaround and its limitation","proposed_solution":"Concrete new user-facing behavior","user_value":"How this helps intended users, with assumptions stated","scope":"Bounded implementation approach, feasibility and explicit non-goals","acceptance_criteria":["Observable, testable result"],"files":["path/to/existing/source"],"evidence":["Inspected code/docs/tests and observed result supporting the gap and fit"]}]}`
+	reviewReceipt = `FEATURE_REVIEW {"verdict":"new|duplicate|uncertain|invalid","reason":"Specific comparison and validation evidence","checked":[1,2],"duplicate":0}`
+)
+
 func jsonContext(v any) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }
 
 func scanPrompt(cfg Config, s *State, snapshot string) string {
@@ -64,7 +69,7 @@ Evidence must include inspected code/docs/tests and observed checks, or a precis
 when execution is unavailable. Record assumptions and feasibility limits. Return zero findings when no
 valuable, feasible and demonstrably new feature is supported. MaxIssues is a maximum, never a quota.
 Finish with one JSON object on the last line:
-FEATURE_RESULT {"summary":"Purpose, workflows and areas inspected, checks performed and limitations","findings":[{"title":"Concise feature title","user_problem":"Specific unmet goal and intended user","current_workflow":"Existing workflow or workaround and its limitation","proposed_solution":"Concrete new user-facing behavior","user_value":"How this helps intended users, with assumptions stated","scope":"Bounded implementation approach, feasibility and explicit non-goals","acceptance_criteria":["Observable, testable result"],"files":["path/to/existing/source"],"evidence":["Inspected code/docs/tests and observed result supporting the gap and fit"]}]}
+` + scanReceipt + `
 
 Scan context (data):
 ` + jsonContext(struct {
@@ -96,7 +101,7 @@ checks and outcomes in reason. A candidate is not new merely because its receipt
 	}
 	return groundRules + instruction + `
 Finish with one JSON object on the last line:
-FEATURE_REVIEW {"verdict":"new|duplicate|uncertain|invalid","reason":"Specific comparison and validation evidence","checked":[1,2],"duplicate":0}
+` + reviewReceipt + `
 
 Review context (data):
 ` + jsonContext(struct {
@@ -104,6 +109,46 @@ Review context (data):
 		Commit  string
 		Issues  []Issue
 	}{f, commit, issues})
+}
+
+// receiptError marks an answer whose research may be complete but whose final
+// line carries no decodable receipt, so one recovery pass is worth attempting.
+type receiptError struct {
+	prefix string
+	marker bool
+}
+
+func (e *receiptError) Error() string {
+	msg := "agent did not finish with a " + e.prefix + " receipt"
+	if e.marker {
+		msg += " (marker present but the JSON was truncated or invalid)"
+	}
+	return msg
+}
+
+// Agents occasionally truncate the closing brackets, wrap the receipt in a code
+// fence, or add prose after it. Discarding a long research pass for that is
+// wasteful; ask the same agent to restate its own receipt from the answer text.
+func recoveryPrompt(prefix, answer string) string {
+	schema := scanReceipt
+	if prefix == "FEATURE_REVIEW" {
+		schema = reviewReceipt
+	}
+	const limit = 256 << 10
+	if runes := []rune(answer); len(runes) > limit {
+		answer = string(runes[len(runes)-limit:])
+	}
+	return groundRules + `
+A previous answer ended without a decodable ` + prefix + ` receipt, for example truncated JSON, a code fence,
+or trailing prose. Restate that receipt using ONLY the supplied answer text. Do not research, run commands,
+read files, add or merge findings, change verdicts, or fill gaps with invented content. Repair only structure:
+complete unterminated JSON, remove fences and surrounding prose. Omit any finding whose fields are not fully
+present in the answer. If the answer holds no receipt content, reply with the single word UNRECOVERABLE.
+Finish with one JSON object on the last line:
+` + schema + `
+
+Previous answer (data):
+` + answer
 }
 
 func receipt(text, prefix string, dst any) error {
@@ -127,7 +172,7 @@ func receipt(text, prefix string, dst any) error {
 		rest = suffix
 	}
 	if raw == "" {
-		return fmt.Errorf("agent did not finish with a %s receipt", prefix)
+		return &receiptError{prefix: prefix, marker: strings.Contains(text, prefix+" ")}
 	}
 	d := json.NewDecoder(strings.NewReader(raw))
 	d.DisallowUnknownFields()

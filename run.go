@@ -205,6 +205,32 @@ func (e engine) step(ctx context.Context, s *State, force bool) error {
 	s.Scan.Failure = err.Error()
 	return errors.Join(err, e.save(s))
 }
+
+// execute runs one prompt and parses its receipt. A missing or truncated receipt
+// at the end of an otherwise complete answer gets one recovery pass, in which the
+// agent restates the receipt from its own text, before the attempt fails.
+func (e engine) execute(ctx context.Context, s *State, phase string, a Agent, prompt, prefix string, parse func(string) error) error {
+	text, err := a.Execute(ctx, prompt)
+	if err != nil {
+		return err
+	}
+	err = parse(text)
+	var missing *receiptError
+	if !errors.As(err, &missing) {
+		return err
+	}
+	e.log.Warn("Recovering agent receipt", "receipt", prefix, "error", err)
+	e.report(s, phase, "Recovering the "+prefix+" receipt")
+	recovered, execErr := a.Execute(ctx, recoveryPrompt(prefix, text))
+	if execErr != nil {
+		return fmt.Errorf("%w; receipt recovery failed: %w", err, execErr)
+	}
+	if parseErr := parse(recovered); parseErr != nil {
+		return fmt.Errorf("%w; receipt recovery failed: %v", err, parseErr)
+	}
+	e.log.Info("Recovered agent receipt", "receipt", prefix)
+	return nil
+}
 func containsMarker(i Issue, key string) bool {
 	return strings.Contains(i.Body, marker(key))
 }
@@ -229,12 +255,11 @@ func (e engine) attempt(ctx context.Context, s *State, g, w checkout) error {
 		}
 		e.report(s, "investigating", "Researching new features")
 		e.log.Info("Researching new features", "commit", s.Scan.Commit, "issues", len(issues), "directory", w.config.Directory)
-		text, err := a.Execute(ctx, scanPrompt(e.config, s, path))
-		if err != nil {
+		var r ScanResult
+		if err := e.execute(ctx, s, "investigating", a, scanPrompt(e.config, s, path), "FEATURE_RESULT", func(text string) (err error) {
+			r, err = parseScan(text, e.config.MaxIssues)
 			return err
-		}
-		r, err := parseScan(text, e.config.MaxIssues)
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 		e.report(s, "verifying", "Checking discovered findings and workspace")
@@ -343,7 +368,7 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 			chunks = pending
 			for index, chunk := range chunks {
 				e.report(s, "reviewing", fmt.Sprintf("%s (batch %d/%d)", c.Finding.Title, index+1, len(chunks)))
-				r, err := executeReview(ctx, a, c.Finding, s.Scan.Commit, chunk, !validated)
+				r, err := e.executeReview(ctx, s, a, c.Finding, s.Scan.Commit, chunk, !validated)
 				if err != nil {
 					return err
 				}
@@ -478,20 +503,20 @@ func reviewBatchKey(chunk []Issue) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(chunk))))
 }
 
-func executeReview(ctx context.Context, a Agent, f Finding, commit string, chunk []Issue, validate bool) (Review, error) {
+func (e engine) executeReview(ctx context.Context, s *State, a Agent, f Finding, commit string, chunk []Issue, validate bool) (Review, error) {
 	prompt := reviewPrompt(f, commit, chunk, validate)
 	for attempt := 0; attempt < 2; attempt++ {
-		text, err := a.Execute(ctx, prompt)
-		if err != nil {
-			return Review{}, err
-		}
-		r, err := parseReview(text, chunk)
+		var r Review
+		err := e.execute(ctx, s, "reviewing", a, prompt, "FEATURE_REVIEW", func(text string) (parseErr error) {
+			r, parseErr = parseReview(text, chunk)
+			return parseErr
+		})
 		if err == nil {
 			return r, nil
 		}
 		var coverage *coverageError
 		if !errors.As(err, &coverage) {
-			return r, err
+			return Review{}, err
 		}
 		if attempt == 1 {
 			return r, fmt.Errorf("review coverage correction exhausted after 2 attempts: %w", err)
