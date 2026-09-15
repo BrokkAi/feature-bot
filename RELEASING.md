@@ -77,8 +77,12 @@ trusted publishing for all five existing packages: GitHub owner `BrokkAi`, repo
 `feature-bot`, workflow `publish-packages.yml`, environment `packages-publish`.
 The workflow uses OIDC, not a developer login or stored NPM_TOKEN. A rejected
 exchange must be fixed by an npm package administrator; never upload a test
-version to discover rights. Trust validation uses npm's documented
-[package token exchange API](https://api-docs.npmjs.com/).
+version to discover rights. The documented
+[package token exchange API](https://api-docs.npmjs.com/) proves package-scoped
+identity, but does not prove that trust allows direct publication rather than
+staging. npm enforces that grant on the first release upload. If it rejects the
+upload, the workflow stops and retains the private GitHub draft for an exact-tag
+retry after the administrator fixes the trust grant.
 
 Keep any environment approval and branch/tag rules. Required human approval or
 an inaccessible publishing identity blocks readiness. The preflight draft needs

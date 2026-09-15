@@ -187,7 +187,7 @@ def authorization(sha, tag, root):
         expiry = datetime.fromisoformat(result['expires'].replace('Z', '+00:00'))
         require(expiry > datetime.now(timezone.utc) + timedelta(minutes=5), f'npm publishing token expires too soon: {name}')
         expiries.append(expiry.isoformat())
-        print(f'npm accepted publisher trust and issued a scoped token for {name}; expires {expiry.isoformat()}')
+        print(f'npm accepted package-scoped OIDC exchange for {name}; expires {expiry.isoformat()}')
     # No tag is created by a draft release. Delete only the unique probe we created.
     probe = f'preflight-{sha[:12]}-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}'
     record = api(f'repos/{REPO}/releases', '-X', 'POST', '-f', f'tag_name={probe}', '-f', f'target_commitish={sha}', '-F', 'draft=true', '-f', 'name=Disposable authorization probe')
@@ -247,7 +247,7 @@ def publish(sha, tag, root, packages):
     if record and not record['draft'] and all(existing.values()):
         print('Complete immutable release verified; nothing to upload')
         return
-    authorization(sha, tag, root)  # Recheck current credentials before any final asset upload.
+    authorization(sha, tag, root)  # Recheck package-scoped identity before any final asset upload.
     if record is None:
         record = api(f'repos/{REPO}/releases', '-X', 'POST', '-f', f'tag_name={tag}', '-f', f'target_commitish={sha}', '-F', 'draft=true', '-f', f'name=Brokk Feature Bot {tag}')
     if record['draft']:
