@@ -321,8 +321,39 @@ original commit. Internal workspace paths, transcripts, and publication markers
 are not included as metadata. Proposal and review prose is preserved as Markdown;
 review that content before sharing it.
 
-Scan worktrees and research files are retained for inspection. Manage their
-retention along with transcripts externally. Agent instructions prohibit feature implementation, fixes,
+### Reclaim completed scan workspaces
+
+Scan worktrees and research files are retained for inspection. Preview old
+successfully completed workspaces, then explicitly apply removal:
+
+```sh
+bfb prune --config feature-bot.json --older-than 720h
+bfb prune --config feature-bot.json --older-than 720h --apply
+```
+
+The positive duration is required; only scans completed strictly before the age
+cutoff qualify, including zero-finding and dry-run scans. Preview explains skipped
+records and leaves saved state and worktrees unchanged. Apply uses Git worktree
+removal, **including untracked and ignored research artifacts**. Saved proposals,
+reviews, issue URLs, recent history and transcripts are preserved.
+
+Pruning takes the same repository, state and checkout locks as research and
+refuses to run while research holds them. It validates workspace containment,
+Git ownership, detached HEAD, the recorded commit, tracked changes and Git locks.
+Active scans (including exhausted retries and unresolved publication), failed or
+discarded scans, and legacy workspaces without completion records are ineligible.
+Symlink paths and modified or locked worktrees are skipped. Interrupted cleanup
+can be retried: missing directories have only their matching Git registration
+removed; records are retired once both are gone. Removal failures retain records
+and return an error, while other eligible workspaces can still be removed.
+
+With explicit configuration, pruning needs local Git and performs no fetch,
+GitHub request or agent execution. Repository discovery may look up the default
+branch; pass `--branch` to avoid that lookup. Use the same configuration and branch
+as the original scan. Legacy workspaces and transcript retention remain externally
+managed.
+
+Agent instructions prohibit feature implementation, fixes,
 commits, pushes, and direct GitHub writes; tracked source changes or a changed
 HEAD invalidate the scan. Evidence is independently reviewed by the LLM, not
 proof that tests are correct. As in the sibling bots, ACP permission requests

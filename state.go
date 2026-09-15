@@ -37,7 +37,16 @@ type Scan struct {
 	Candidates []*Candidate `json:"candidates,omitempty"`
 	Discovered bool         `json:"discovered"`
 }
+
+// CompletedWorkspace records only successfully finished scans.
+type CompletedWorkspace struct {
+	Directory   string    `json:"directory"`
+	Commit      string    `json:"commit"`
+	CompletedAt time.Time `json:"completed_at"`
+}
 type State struct {
+	Workspaces []CompletedWorkspace `json:"completed_workspaces,omitempty"`
+
 	Format    int          `json:"format"`
 	Remote    string       `json:"remote"`
 	Branch    string       `json:"branch"`
@@ -67,6 +76,13 @@ func ReadState(cfg Config) (*State, error) {
 	}
 	if s.Format != 1 || s.Remote != cfg.Remote || s.Branch != cfg.Branch || s.Directory != cfg.Directory || s.Repo != cfg.GitHubRepo() || s.Host != cfg.GitHub.Host {
 		return nil, errors.New("state version or repository identity differs from configuration")
+	}
+	seen := map[string]bool{}
+	for _, w := range s.Workspaces {
+		if !validCommit(w.Commit) || w.CompletedAt.IsZero() || !validScanDirectory(cfg, w.Directory) || seen[w.Directory] {
+			return nil, errors.New("invalid completed workspace")
+		}
+		seen[w.Directory] = true
 	}
 	candidates := append([]*Candidate(nil), s.Completed...)
 	if s.Scan != nil {
@@ -185,4 +201,8 @@ func Retry(cfg Config) error {
 	s.Scan.RetryAt = time.Time{}
 	s.NextScan = time.Time{}
 	return writeState(cfg, s)
+}
+
+func validScanDirectory(cfg Config, dir string) bool {
+	return filepath.IsAbs(dir) && filepath.Clean(dir) == dir && filepath.Dir(dir) == cfg.Directory+"-scans" && strings.HasPrefix(filepath.Base(dir), "scan-")
 }
