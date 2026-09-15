@@ -1,81 +1,71 @@
 name: Publish packages
 run-name: Release ${{ inputs.tag || github.ref_name }} (publish=${{ github.event_name == 'push' || inputs.publish }})
-
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing published release tag, such as v0.1.0 (dispatch from this tag)
+        description: Proposed version; a tag is only required for publication
         required: true
         type: string
       publish:
-        description: Publish to npm after validation (false only builds and checks)
+        description: Publish the exact existing tag after all gates pass
         type: boolean
         default: false
-
 permissions:
   contents: read
-
 concurrency:
   group: feature-bot-packages
   cancel-in-progress: false
-
 jobs:
-  native:
-    if: github.event_name == 'push'
-    permissions:
-      contents: write
+  checks:
     uses: ./.github/workflows/release.yml
   packages:
-    needs: native
-    if: ${{ !cancelled() && (needs.native.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: packages-publish
     permissions:
-      contents: read
+      contents: write
       id-token: write
+    env:
+      RELEASE_COMMIT: ${{ github.sha }}
+      RELEASE_TARGET: ${{ github.sha }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Require the exact release tag
-        env:
-          RELEASE_REF: ${{ github.ref }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: test "$RELEASE_REF" = "refs/tags/$RELEASE_TAG"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Require explicit publication context
+        run: |
+          if [ "$RELEASE_PUBLISH" = true ]; then
+            test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
-      - name: Download the published native assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
-          gh release download "$RELEASE_TAG" --dir dist/native
-      - name: Test launchers and build packages from verified assets
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          python3 -m unittest discover -s scripts -p '*_test.py' -v
-          node --test --test-isolation=none npm/bfb.test.cjs
-          python3 scripts/package_installers.py "$RELEASE_TAG" dist/native dist/packages
-          python3 scripts/smoke_installers.py --tag "$RELEASE_TAG" --assets dist/native --packages dist/packages
-      - name: Check version availability and existing package integrity
-        run: python3 scripts/package_registry.py check dist/packages
-      - name: Save validated packages for review and bootstrap publication
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - name: Build every native and npm deliverable and smoke test installation
+        run: python3 scripts/release_preflight.py build
+      - name: Check every destination for version conflicts
+        run: python3 scripts/release_preflight.py version
+      - name: Check actual GitHub and npm publishing identities without uploads
+        if: env.RELEASE_PUBLISH != 'true'
+        run: python3 scripts/release_preflight.py authorize-job
+      - name: Save exact-commit preflight evidence and staged bytes
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: packages-${{ inputs.tag || github.ref_name }}
-          path: dist/packages/
+          name: preflight-${{ env.RELEASE_TAG }}
+          path: dist/preflight/${{ github.sha }}/${{ env.RELEASE_TAG }}/
           if-no-files-found: error
-      - name: Submit validated packages
-        if: github.event_name == 'push' || inputs.publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: python3 scripts/package_registry.py publish dist/packages
+          retention-days: 30
+      - name: Resume publication and finalize only after every destination is complete
+        if: env.RELEASE_PUBLISH == 'true'
+        run: python3 scripts/release_preflight.py publish
