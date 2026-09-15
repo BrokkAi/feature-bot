@@ -66,6 +66,7 @@ jobs:
           path: dist/preflight/${{ github.sha }}/${{ env.RELEASE_TAG }}/
           if-no-files-found: error
           retention-days: 30
+          overwrite: true
       - name: Resume publication and finalize only after every destination is complete
         if: env.RELEASE_PUBLISH == 'true'
         run: python3 scripts/release_preflight.py publish

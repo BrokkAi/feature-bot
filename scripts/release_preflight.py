@@ -223,6 +223,23 @@ def evidence(sha, tag, root):
     print(f'Exact-commit publishing-context authorization passed in run {run["databaseId"]}')
 
 
+def tag_authorization():
+    # Tag creation is performed by the release operator/daemon, not by Actions.
+    response = gh('api', '--hostname', 'github.com', '-i', f'repos/{REPO}')
+    headers, body = response.split('\n\n', 1)
+    fields = dict(line.split(': ', 1) for line in headers.splitlines() if ': ' in line)
+    fields = {key.lower(): value for key, value in fields.items()}
+    scopes = {s.strip() for s in fields.get('x-oauth-scopes', '').split(',')}
+    require('repo' in scopes, 'tag publisher must have a validated repo-scoped OAuth identity')
+    require(json.loads(body)['permissions']['push'], 'tag publisher lacks repository push permission')
+    expiry = fields.get('github-authentication-token-expiration')
+    if expiry:
+        require(datetime.fromisoformat(expiry.replace('Z', '+00:00')) > datetime.now(timezone.utc), 'tag publisher token expired')
+    require(api(f'repos/{REPO}/rulesets') == [], 'repository rulesets require explicit tag publisher review')
+    identity = api('user')['login']
+    print(f'Git tag publisher {identity}: active repo OAuth scope, push permission, no tag restrictions')
+
+
 def publish(sha, tag, root, packages):
     require(os.environ.get('RELEASE_PUBLISH') == 'true' and os.environ.get('GITHUB_REF') == f'refs/tags/{tag}', 'publication requires an explicit tag workflow trigger')
     tag_status(sha, tag, required=True)
@@ -261,9 +278,12 @@ def publish(sha, tag, root, packages):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['build', 'authorization', 'version', 'published', 'authorize-job', 'publish'])
+    parser.add_argument('command', choices=['build', 'authorization', 'version', 'published', 'authorize-job', 'tag-authorization', 'publish'])
     args = parser.parse_args()
     sha, tag, root = context()
+    if args.command == 'tag-authorization':
+        tag_authorization()
+        return
     if args.command == 'authorization':
         evidence(sha, tag, root)
         return

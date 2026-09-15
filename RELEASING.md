@@ -56,8 +56,12 @@ For independent gates, use these commands with the environment above:
 ```sh
 python3 scripts/release_preflight.py build
 python3 scripts/release_preflight.py authorization
+python3 scripts/release_preflight.py tag-authorization
 python3 scripts/release_preflight.py version
 ```
+
+The tag authorization command separately validates the daemon/operator OAuth
+identity, repository push permission and absence of tag restrictions.
 
 Authorization requires the latest successful exact-SHA dispatch, all jobs passing,
 matching run attempt and evidence, and unexpired npm grants. Re-dispatch with
