@@ -20,6 +20,16 @@ def archive(content=b'binary', mode=0o755, mtime=0):
 
 
 class ReleasePreflight(unittest.TestCase):
+    def test_oidc_subject_accepts_immutable_repository_ids_and_rejects_other_environments(self):
+        repository = {'id': 1364474149, 'owner': {'id': 204942796}}
+        claims = {'repository': 'BrokkAi/feature-bot', 'repository_id': '1364474149',
+                  'repository_owner_id': '204942796',
+                  'sub': 'repo:BrokkAi@204942796/feature-bot@1364474149:environment:packages-publish'}
+        gate.check_subject(claims, repository)
+        claims['sub'] = claims['sub'].replace('packages-publish', 'other')
+        with self.assertRaisesRegex(ValueError, 'environment'):
+            gate.check_subject(claims, repository)
+
     def test_compression_metadata_does_not_change_payload(self):
         first, second = archive(mtime=0), archive(mtime=1)
         self.assertNotEqual(first, second)
