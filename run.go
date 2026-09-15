@@ -314,8 +314,14 @@ func issueDigest(i Issue) [32]byte { b, _ := json.Marshal(i); return sha256.Sum2
 
 func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a Agent, c *Candidate) error {
 	e.report(s, "reviewing", "Refreshing issue history: "+c.Finding.Title)
-	checked := map[int][32]byte{}
-	validated := false
+	contextKey := fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(c.Finding)+s.Scan.Commit)))
+	if c.Checkpoint == nil || c.Checkpoint.Context != contextKey {
+		c.Checkpoint = &ReviewCheckpoint{Context: contextKey}
+	}
+	if c.Checkpoint.Batches == nil {
+		c.Checkpoint.Batches = map[string]bool{}
+	}
+	validated := c.Checkpoint.Validated
 	// Refresh until every currently visible issue version has been reviewed. If the
 	// history changes continuously, stop rather than publish against a stale snapshot.
 	for refresh := 0; refresh < 5; refresh++ {
@@ -323,21 +329,21 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 		if err != nil {
 			return err
 		}
-		var remaining []Issue
-		for _, i := range issues {
-			if digest, ok := checked[i.Number]; !ok || digest != issueDigest(i) {
-				remaining = append(remaining, i)
+		chunks := reviewChunks(issues)
+		var pending [][]Issue
+		for _, chunk := range chunks {
+			if !c.Checkpoint.Batches[reviewBatchKey(chunk)] {
+				pending = append(pending, chunk)
 			}
 		}
-		if len(remaining) > 0 || !validated {
-			chunks := reviewChunks(remaining)
+		if len(pending) > 0 || !validated {
+			if len(pending) == 0 {
+				pending = reviewChunks(nil)
+			}
+			chunks = pending
 			for index, chunk := range chunks {
 				e.report(s, "reviewing", fmt.Sprintf("%s (batch %d/%d)", c.Finding.Title, index+1, len(chunks)))
-				text, err := a.Execute(ctx, reviewPrompt(c.Finding, s.Scan.Commit, chunk, !validated))
-				if err != nil {
-					return err
-				}
-				r, err := parseReview(text, chunk)
+				r, err := executeReview(ctx, a, c.Finding, s.Scan.Commit, chunk, !validated)
 				if err != nil {
 					return err
 				}
@@ -359,11 +365,17 @@ func (e engine) reviewAndPublish(ctx context.Context, s *State, g, w checkout, a
 					e.log.Info("Finding skipped", "title", c.Finding.Title, "status", c.Status, "reason", c.Review)
 					return e.save(s)
 				}
-			}
-			for _, i := range remaining {
-				checked[i.Number] = issueDigest(i)
+				c.Checkpoint.Validated = validated
+				c.Checkpoint.Batches[reviewBatchKey(chunk)] = true
+				if err := e.save(s); err != nil {
+					return err
+				}
 			}
 			continue
+		}
+		checked := map[int][32]byte{}
+		for _, i := range issues {
+			checked[i.Number] = issueDigest(i)
 		}
 		e.report(s, "verifying", "Verifying source and evidence: "+c.Finding.Title)
 		if err := g.open(ctx); err != nil {
@@ -460,4 +472,35 @@ func (e engine) finish(s *State) error {
 	}
 	e.report(s, phase, summary)
 	return nil
+}
+
+func reviewBatchKey(chunk []Issue) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(jsonContext(chunk))))
+}
+
+func executeReview(ctx context.Context, a Agent, f Finding, commit string, chunk []Issue, validate bool) (Review, error) {
+	prompt := reviewPrompt(f, commit, chunk, validate)
+	for attempt := 0; attempt < 2; attempt++ {
+		text, err := a.Execute(ctx, prompt)
+		if err != nil {
+			return Review{}, err
+		}
+		r, err := parseReview(text, chunk)
+		if err == nil {
+			return r, nil
+		}
+		var coverage *coverageError
+		if !errors.As(err, &coverage) {
+			return r, err
+		}
+		if attempt == 1 {
+			return r, fmt.Errorf("review coverage correction exhausted after 2 attempts: %w", err)
+		}
+		required := map[int]bool{}
+		for _, i := range chunk {
+			required[i.Number] = true
+		}
+		prompt = fmt.Sprintf("Correct the rejected review receipt. Validation error: %s\nRequired issue-number set: %s\nReview every supplied issue before attesting coverage; do not merely fill in numbers. Return a complete FEATURE_REVIEW receipt.\n\n", err, jsonContext(numberList(required))) + reviewPrompt(f, commit, chunk, validate)
+	}
+	panic("unreachable")
 }
