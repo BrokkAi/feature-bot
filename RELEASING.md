@@ -66,7 +66,8 @@ identity, repository push permission and absence of tag restrictions.
 Authorization requires the latest successful exact-SHA dispatch, all jobs passing,
 matching run attempt and evidence, and unexpired npm grants. Re-dispatch with
 `publish=false` when evidence expires. Missing, failed or unknown evidence fails.
-Required workflows are `ci.yml`, `release.yml`, and `publish-packages.yml`.
+Required top-level workflow runs are `ci.yml` and `publish-packages.yml`;
+`release.yml` is a reusable workflow executed inside Publish packages.
 
 ## Credentials and approvals
 

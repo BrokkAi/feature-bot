@@ -183,7 +183,7 @@ def authorization(sha, tag, root):
     for name in NAMES:
         endpoint = 'https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/' + urllib.parse.quote(name, safe='@')
         result = request_json(endpoint, token, 'POST')
-        require(bool(result.get('token')), f'npm did not grant a package publishing token for {name}')
+        require(result.get('token_type') == 'oidc' and bool(result.get('token')), f'npm did not grant a package publishing token for {name}')
         expiry = datetime.fromisoformat(result['expires'].replace('Z', '+00:00'))
         require(expiry > datetime.now(timezone.utc) + timedelta(minutes=5), f'npm publishing token expires too soon: {name}')
         expiries.append(expiry.isoformat())
@@ -255,7 +255,9 @@ def publish(sha, tag, root, packages):
         for path in sorted((root / 'native').iterdir()):
             if path.name not in names:
                 gh('release', 'upload', tag, str(path), '--repo', f'github.com/{REPO}')
-        github_status(sha, tag, root)  # Checks uploaded bytes against this job's staging.
+        staged = github_status(sha, tag, root)  # Checks uploaded bytes against this job's staging.
+        require({a['name'] for a in staged['assets']} == {p.name for p in (root / 'native').iterdir()},
+                'native staging is incomplete; do not finalize the release')
     for p in packages:
         if not existing[p['name']]:
             subprocess.run(['npm', 'publish', str((root / 'packages/npm' / p['filename']).resolve()), '--access', 'public', '--registry', 'https://registry.npmjs.org', '--tag', 'next' if '-' in tag else 'latest'], check=True)
