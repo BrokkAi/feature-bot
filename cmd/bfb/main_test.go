@@ -155,3 +155,44 @@ func TestReportCLIExplicitBranchWithoutTools(t *testing.T) {
 		t.Fatalf("empty report: %s %v", data, err)
 	}
 }
+
+func TestPruneCLIOfflineAndFlags(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"remote":"https://github.com/o/r.git","agent":{"command":["missing-acp"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Any Git execution would be unexpected with no state; gh and agents are absent.
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	run := func(context.Context, bot.Config, *slog.Logger, bool) error {
+		t.Fatal("prune started research")
+		return nil
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, apply := range []bool{false, true} {
+		args := []string{"prune", "--config", path, "--older-than", "720h"}
+		if apply {
+			args = append(args, "--apply")
+		}
+		if err := executeWithRun(context.Background(), args, log, run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"prune", "--config", path}, {"prune", "--config", path, "--older-than", "0"},
+		{"prune", "--config", path, "--older-than", "-1h"}, {"prune", "--config", path, "--older-than", "bad"},
+		{"once", "--config", path, "--apply"}, {"status", "--config", path, "--older-than", "1h"},
+	} {
+		if err := executeWithRun(context.Background(), args, log, run); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+}

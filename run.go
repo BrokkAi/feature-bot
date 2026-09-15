@@ -485,6 +485,9 @@ func (e engine) finish(s *State) error {
 			phase = "discarded"
 		}
 	}
+	if phase == "complete" {
+		s.Workspaces = append(s.Workspaces, CompletedWorkspace{Directory: s.Scan.Directory, Commit: s.Scan.Commit, CompletedAt: e.now()})
+	}
 	s.History = append(s.History, s.Scan.Commit+": "+s.Scan.Summary)
 	if len(s.History) > 20 {
 		s.History = s.History[len(s.History)-20:]

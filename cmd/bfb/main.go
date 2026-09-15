@@ -52,16 +52,18 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 			return versionCommand(args[1:], os.Stdout)
 		case "worker":
 			return workerCommand(ctx, args[1:], buildVersion())
-		case "run", "once", "status", "report", "retry":
+		case "run", "once", "status", "report", "retry", "prune":
 			mode = args[0]
 			args = args[1:]
 		}
 	}
 	fs := flag.NewFlagSet("bfb", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
+		fmt.Fprintln(fs.Output(), "Usage: bfb [run|once|status|report|retry|prune|worker|version] [repository path or URL] [options]\n\nFind valuable new features and file new GitHub issues without duplicates. No config file is required.")
 		fs.PrintDefaults()
 	}
+	olderThan := fs.Duration("older-than", 0, "prune only: required positive age, e.g. 720h")
+	apply := fs.Bool("apply", false, "prune only: remove eligible worktrees including untracked and ignored artifacts")
 	file := fs.String("config", "", "optional JSON configuration")
 	reportStatus := fs.String("status", "", "report only: filter by saved candidate status (e.g. dry_run)")
 	branch := fs.String("branch", "", "base branch (default: repository default)")
@@ -104,6 +106,20 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name == "status" {
 				result = errors.New("--status is only supported by report")
+			}
+		})
+		if result != nil {
+			return result
+		}
+	}
+	if mode == "prune" {
+		if *olderThan <= 0 {
+			return errors.New("--older-than must be a positive duration")
+		}
+	} else {
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "older-than" || f.Name == "apply" {
+				result = errors.New("--older-than and --apply are only supported by prune")
 			}
 		})
 		if result != nil {
@@ -164,6 +180,9 @@ func executeWithRun(ctx context.Context, args []string, log *slog.Logger, run ru
 	}
 	if cfg.GitHubRepo() == "" {
 		return errors.New("GitHub remote required; set github.repo for a local mirror")
+	}
+	if mode == "prune" {
+		return bot.Prune(ctx, cfg, *olderThan, *apply, os.Stdout)
 	}
 	if mode == "status" || mode == "report" {
 		s, err := bot.ReadState(cfg)
