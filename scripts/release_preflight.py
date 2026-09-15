@@ -168,6 +168,14 @@ def request_json(url, token, method='GET'):
         return json.load(response)
 
 
+def exchange_expiry(value):
+    if isinstance(value, int) and not isinstance(value, bool):
+        return datetime.fromtimestamp(value, timezone.utc)
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    raise ValueError('npm exchange returned an unsupported expiry')
+
+
 def check_subject(claims, repository):
     owner_id, repo_id = str(repository['owner']['id']), str(repository['id'])
     subjects = {
@@ -196,7 +204,7 @@ def authorization(sha, tag, root):
         endpoint = 'https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/' + urllib.parse.quote(name, safe='@')
         result = request_json(endpoint, token, 'POST')
         require(result.get('token_type') == 'oidc' and bool(result.get('token')), f'npm did not grant a package publishing token for {name}')
-        expiry = datetime.fromisoformat(result['expires'].replace('Z', '+00:00'))
+        expiry = exchange_expiry(result['expires'])
         require(expiry > datetime.now(timezone.utc) + timedelta(minutes=5), f'npm publishing token expires too soon: {name}')
         expiries.append(expiry.isoformat())
         print(f'npm accepted package-scoped OIDC exchange for {name}; expires {expiry.isoformat()}')

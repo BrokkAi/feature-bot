@@ -1,4 +1,5 @@
 import gzip
+from datetime import datetime, timezone, timedelta
 import io
 import json
 from pathlib import Path
@@ -20,6 +21,12 @@ def archive(content=b'binary', mode=0o755, mtime=0):
 
 
 class ReleasePreflight(unittest.TestCase):
+    def test_npm_exchange_accepts_numeric_unix_expiry(self):
+        expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        self.assertEqual(gate.exchange_expiry(int(expiry.timestamp())).timestamp(), int(expiry.timestamp()))
+        with self.assertRaisesRegex(ValueError, 'unsupported expiry'):
+            gate.exchange_expiry(True)
+
     def test_oidc_subject_accepts_immutable_repository_ids_and_rejects_other_environments(self):
         repository = {'id': 1364474149, 'owner': {'id': 204942796}}
         claims = {'repository': 'BrokkAi/feature-bot', 'repository_id': '1364474149',
