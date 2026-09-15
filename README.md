@@ -62,6 +62,7 @@ make build
 ./bin/bfb /path/to/your-repo --max-issues 2 --label enhancement
 ./bin/bfb /path/to/your-repo --model YOUR_MODEL_ID --effort low
 ./bin/bfb status /path/to/your-repo
+./bin/bfb report /path/to/your-repo --branch master --status dry_run > proposals.md
 ./bin/bfb version
 ./bin/bfb retry /path/to/your-repo --once
 ```
@@ -121,7 +122,7 @@ details on exit.
 
 Piped input, redirected stderr, and `TERM=dumb` use scrolling output automatically.
 `--plain` and `--json` disable the dashboard and are mutually exclusive.
-`NO_COLOR` disables dashboard colors. `status`, `version`, and help keep their
+`NO_COLOR` disables dashboard colors. `status`, `report`, `version`, and help keep their
 existing output and never open the dashboard.
 
 ## How it works
@@ -252,6 +253,32 @@ State defaults to `$XDG_STATE_HOME/feature-bot` or `~/.local/state/feature-bot`,
 remote and branch. JSON state is replaced atomically with fsync; private session
 transcripts live under the state directory. `status` prints saved JSON without
 starting an agent. `--json` selects structured progress logs.
+
+### Saved proposal reports
+
+`report` writes Markdown to stdout for every saved completed and active candidate,
+including findings beyond the dashboard's 200-entry limit. It includes repository,
+branch, saved status, available issue or duplicate URL, proposal fields, and
+independent review. Redirect stdout to save or share it:
+
+```sh
+bfb report --config feature-bot.json > proposals.md
+bfb report --config feature-bot.json --status dry_run > dry-run-proposals.md
+bfb report /path/to/repo --branch master > proposals.md
+```
+
+Omit `--status` to include all candidates. Supported filters are `pending`,
+`posting`, `submitted`, `duplicate`, `uncertain`, `invalid`, `dry_run`, and `stale`.
+Missing state or a filter with no matches produces an explicit no-findings report.
+
+Reporting only reads saved state: it starts no scan or agent and does not require
+`gh` or an ACP executable. Explicit configuration permits fully local reading;
+with repository discovery, pass `--branch` to avoid a default-branch network
+lookup. Use the same configuration and branch as the original run.
+Reports omit commit attribution because completed candidates do not retain their
+original commit. Internal workspace paths, transcripts, and publication markers
+are not included as metadata. Proposal and review prose is preserved as Markdown;
+review that content before sharing it.
 
 Scan worktrees and research files are retained for inspection. Manage their
 retention along with transcripts externally. Agent instructions prohibit feature implementation, fixes,
