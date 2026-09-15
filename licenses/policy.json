@@ -3,11 +3,12 @@
   "project_license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
   "modules": {
     "github.com/BrokkAi/acp-go": {
-      "version": "v0.1.0",
+      "version": "v0.7.0",
       "license": "Apache-2.0",
-      "source": "https://github.com/BrokkAi/acp-go/tree/v0.1.0",
+      "source": "https://github.com/BrokkAi/acp-go/tree/v0.7.0",
       "files": {
-        "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "NOTICE": "eb3c683102ed8745530ac8eecbe216e1c08584448f82f9bfb7b636880a1d7156"
       }
     },
     "github.com/rivo/uniseg": {
