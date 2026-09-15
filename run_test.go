@@ -438,11 +438,15 @@ type truncatingAgent struct {
 	fakeAgent
 	recoveries    int
 	unrecoverable bool
+	recoveryErr   error
 }
 
 func (a *truncatingAgent) Execute(ctx context.Context, prompt string) (string, error) {
 	if strings.Contains(prompt, "Previous answer (data):") {
 		a.recoveries++
+		if a.recoveryErr != nil {
+			return "", a.recoveryErr
+		}
 		if !strings.Contains(prompt, "FEATURE_RESULT receipt, for example") || !strings.Contains(prompt, "Restate that receipt") {
 			return "", errors.New("recovery prompt lacks receipt guidance: " + prompt)
 		}
@@ -485,5 +489,16 @@ func TestUnrecoverableReceiptPausesWithDetail(t *testing.T) {
 	}
 	if s.Scan == nil || s.Scan.Discovered || s.Scan.Tries != 1 || !strings.Contains(s.Scan.Failure, "receipt recovery failed") {
 		t.Fatalf("attempt not recorded for retry: %+v", s.Scan)
+	}
+}
+
+func TestRecoverySetupFailureRefundsAttempt(t *testing.T) {
+	e, s, _, _, _ := fixture(t)
+	a := &truncatingAgent{recoveryErr: &runner.SetupError{Err: errors.New("missing model")}}
+	e.agent = func(Config) Agent { return a }
+	err := e.step(context.Background(), s, true)
+	var setup *runner.SetupError
+	if !errors.As(err, &setup) || a.recoveries != 1 || s.Scan.Tries != 0 {
+		t.Fatalf("recovery setup error consumed attempt: err=%v recoveries=%d scan=%+v", err, a.recoveries, s.Scan)
 	}
 }

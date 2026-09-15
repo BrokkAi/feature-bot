@@ -223,7 +223,7 @@ func (e engine) execute(ctx context.Context, s *State, phase string, a Agent, pr
 	e.report(s, phase, "Recovering the "+prefix+" receipt")
 	recovered, execErr := a.Execute(ctx, recoveryPrompt(prefix, text))
 	if execErr != nil {
-		return fmt.Errorf("%w; receipt recovery failed: %v", err, execErr)
+		return fmt.Errorf("%w; receipt recovery failed: %w", err, execErr)
 	}
 	if parseErr := parse(recovered); parseErr != nil {
 		return fmt.Errorf("%w; receipt recovery failed: %v", err, parseErr)
