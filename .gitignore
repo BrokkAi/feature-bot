@@ -4,3 +4,8 @@
 *.test
 
 __pycache__/
+
+
+.claude
+.worktrees
+.mjoljnir
