@@ -2,10 +2,32 @@ package featurebot
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestReceiptErrorDistinguishesTruncation(t *testing.T) {
+	var missing *receiptError
+	_, err := parseScan("Research complete, no receipt.", 3)
+	if !errors.As(err, &missing) || missing.marker || strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("absent marker misreported: %v", err)
+	}
+	_, err = parseScan(`Done.FEATURE_RESULT {"summary":"Inspected","findings":[{"title":"X"`, 3)
+	if !errors.As(err, &missing) || !missing.marker || !strings.Contains(err.Error(), "truncated or invalid") {
+		t.Fatalf("truncated receipt misreported: %v", err)
+	}
+	// Validation failures are not recoverable by restating the receipt.
+	_, err = parseScan(`FEATURE_RESULT {"summary":"","findings":[]}`, 3)
+	if errors.As(err, &missing) {
+		t.Fatalf("validation failure reported as missing receipt: %v", err)
+	}
+	p := recoveryPrompt("FEATURE_REVIEW", strings.Repeat("x", 300<<10)+"TAIL")
+	if !strings.Contains(p, reviewReceipt) || strings.Contains(p, scanReceipt) || !strings.HasSuffix(p, "TAIL") || len(p) > 300<<10 {
+		t.Fatal("recovery prompt must restate the matching schema and keep only the answer tail")
+	}
+}
 
 func TestFeatureReceiptRequiresActionableProposal(t *testing.T) {
 	valid := ScanResult{Summary: "Studied task coordination and CSV export", Findings: []Finding{finding()}}

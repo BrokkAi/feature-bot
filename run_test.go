@@ -431,3 +431,59 @@ func TestOperatorVerifierFailureStopsPublication(t *testing.T) {
 		t.Fatal("failed verification still published")
 	}
 }
+
+// A truncated receipt at the end of a complete research pass must not discard
+// the pass. The agent restates its receipt once; only a second failure pauses.
+type truncatingAgent struct {
+	fakeAgent
+	recoveries    int
+	unrecoverable bool
+}
+
+func (a *truncatingAgent) Execute(ctx context.Context, prompt string) (string, error) {
+	if strings.Contains(prompt, "Previous answer (data):") {
+		a.recoveries++
+		if !strings.Contains(prompt, "FEATURE_RESULT receipt, for example") || !strings.Contains(prompt, "Restate that receipt") {
+			return "", errors.New("recovery prompt lacks receipt guidance: " + prompt)
+		}
+		if a.unrecoverable {
+			return "UNRECOVERABLE", nil
+		}
+		answer := strings.Split(prompt, "Previous answer (data):\n")[1]
+		return answer + "]}", nil
+	}
+	text, err := a.fakeAgent.Execute(ctx, prompt)
+	if strings.HasPrefix(text, "FEATURE_RESULT ") {
+		// Reproduces a codex-acp answer that lost the final closing brackets.
+		return "Checked the command path.\n" + strings.TrimSuffix(text, "]}"), nil
+	}
+	return text, err
+}
+func TestTruncatedScanReceiptIsRecovered(t *testing.T) {
+	e, s, f, _, _ := fixture(t)
+	a := &truncatingAgent{}
+	e.agent = func(Config) Agent { return a }
+	if err := e.step(context.Background(), s, true); err != nil {
+		t.Fatal(err)
+	}
+	if a.recoveries != 1 || a.scans != 1 || f.creates != 1 || len(s.Completed) != 1 || s.Completed[0].Status != "submitted" {
+		t.Fatalf("recovery did not complete the scan: recoveries=%d scans=%d creates=%d state=%+v", a.recoveries, a.scans, f.creates, s)
+	}
+}
+func TestUnrecoverableReceiptPausesWithDetail(t *testing.T) {
+	e, s, _, _, _ := fixture(t)
+	a := &truncatingAgent{unrecoverable: true}
+	e.agent = func(Config) Agent { return a }
+	err := e.step(context.Background(), s, true)
+	if err == nil || a.recoveries != 1 {
+		t.Fatalf("expected one failed recovery, got recoveries=%d err=%v", a.recoveries, err)
+	}
+	for _, want := range []string{"did not finish with a FEATURE_RESULT receipt", "truncated or invalid", "receipt recovery failed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if s.Scan == nil || s.Scan.Discovered || s.Scan.Tries != 1 || !strings.Contains(s.Scan.Failure, "receipt recovery failed") {
+		t.Fatalf("attempt not recorded for retry: %+v", s.Scan)
+	}
+}

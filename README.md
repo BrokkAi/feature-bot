@@ -156,7 +156,11 @@ not already supported and rejects bug fixes or refactors without a new capabilit
 The default is at most **three issues per scan**, a **two-hour attempt budget**,
 and another scan **30 minutes after completion**, even if the commit is unchanged.
 Recent summaries guide exploration; this is not a claim of exhaustive coverage.
-`once` runs or resumes one scan and exits. Failed scans retain their candidates,
+`once` runs or resumes one scan and exits. When an agent completes its research
+but the final `FEATURE_RESULT` or `FEATURE_REVIEW` line is truncated, fenced, or
+followed by prose, the daemon asks the agent once to restate that receipt from
+its own answer before treating the attempt as failed; the restated receipt is
+validated exactly like a first-pass one. Failed scans retain their candidates,
 workspace, and diagnostics; retries wait at least 15 minutes and run on the next
 poll, with three attempts before requiring `retry`. Agent setup errors stop the
 daemon without consuming an attempt. An advanced branch invalidates pending
