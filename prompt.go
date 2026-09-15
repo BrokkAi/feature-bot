@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -229,15 +230,25 @@ func parseReview(text string, issues []Issue) (Review, error) {
 	for _, i := range issues {
 		expected[i.Number] = true
 	}
-	if len(r.Checked) != len(expected) {
-		return r, errors.New("review did not cover every supplied issue")
-	}
 	seen := map[int]bool{}
+	repeated, unexpected := map[int]bool{}, map[int]bool{}
 	for _, n := range r.Checked {
-		if !expected[n] || seen[n] {
-			return r, errors.New("review has invalid or repeated issue numbers")
+		if seen[n] {
+			repeated[n] = true
+		}
+		if !expected[n] {
+			unexpected[n] = true
 		}
 		seen[n] = true
+	}
+	missing := map[int]bool{}
+	for n := range expected {
+		if !seen[n] {
+			missing[n] = true
+		}
+	}
+	if len(missing)+len(repeated)+len(unexpected) > 0 {
+		return r, &coverageError{len(expected), numberList(missing), numberList(repeated), numberList(unexpected)}
 	}
 	switch r.Verdict {
 	case "duplicate":
@@ -252,4 +263,32 @@ func parseReview(text string, issues []Issue) (Review, error) {
 		return r, errors.New("invalid review verdict")
 	}
 	return r, nil
+}
+
+// coverageError distinguishes receipts that can receive a targeted corrective attempt.
+type coverageError struct {
+	Expected                      int
+	Missing, Repeated, Unexpected []int
+}
+
+func numberList(set map[int]bool) []int {
+	numbers := make([]int, 0, len(set))
+	for n := range set {
+		numbers = append(numbers, n)
+	}
+	sort.Ints(numbers)
+	return numbers
+}
+
+func boundedNumbers(numbers []int) string {
+	const limit = 20
+	if len(numbers) > limit {
+		return fmt.Sprintf("%v (and %d more)", numbers[:limit], len(numbers)-limit)
+	}
+	return fmt.Sprint(numbers)
+}
+
+func (e *coverageError) Error() string {
+	return fmt.Sprintf("review coverage: expected count=%d; missing=%s; repeated=%s; unexpected=%s",
+		e.Expected, boundedNumbers(e.Missing), boundedNumbers(e.Repeated), boundedNumbers(e.Unexpected))
 }

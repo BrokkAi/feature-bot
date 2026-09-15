@@ -12,12 +12,20 @@ import (
 	"time"
 )
 
+// ReviewCheckpoint is scoped to the exact candidate and source revision. Batch
+// hashes attest all text, including each fragment of a split issue.
+type ReviewCheckpoint struct {
+	Context   string          `json:"context"`
+	Validated bool            `json:"validated"`
+	Batches   map[string]bool `json:"batches"`
+}
 type Candidate struct {
-	RequestID string  `json:"request_id"`
-	Finding   Finding `json:"finding"`
-	Status    string  `json:"status"`
-	URL       string  `json:"url,omitempty"`
-	Review    string  `json:"review,omitempty"`
+	Checkpoint *ReviewCheckpoint `json:"review_checkpoint,omitempty"`
+	RequestID  string            `json:"request_id"`
+	Finding    Finding           `json:"finding"`
+	Status     string            `json:"status"`
+	URL        string            `json:"url,omitempty"`
+	Review     string            `json:"review,omitempty"`
 }
 type Scan struct {
 	Commit     string       `json:"commit"`
