@@ -49,36 +49,9 @@ that checksum failure preserves the existing installation.
 
 ## GitHub Actions and account setup
 
-`ci.yml` checks Linux and macOS, including race tests, vet, licenses, the CLI,
-installer tests, launcher tests, and an offline install. Actions are pinned to
-commit hashes.
-
-Pushing an explicitly requested `v*` release tag invokes `publish-packages.yml`.
-It first calls `release.yml`, which runs CI, builds verified native assets, and
-publishes a GitHub release. Release-candidate tags become GitHub prereleases;
-stable tags become the latest release. The package job then downloads that exact
-published release, validates and smoke-tests all five npm packages, and uploads
-the validated tarballs as a workflow artifact before publication. Prereleases
-use the npm `next` dist-tag; stable versions use `latest`.
-
-The repository is `BrokkAi/feature-bot`. Configure its `packages-publish`
-environment and any desired release approvals. Configure npm trusted publishing
-for **each of the five packages**, with owner `BrokkAi`, repository `feature-bot`,
-workflow `publish-packages.yml`, and environment `packages-publish`. The workflow
-grants `id-token: write` for npm OIDC. An optional `NPM_TOKEN` environment secret
-supports bootstrap publication when an existing trusted publisher is unavailable.
-Package account setup and publication are separate external actions; a local
-build does not perform either.
-
-For an existing published release, dispatch `publish-packages.yml` **from that
-exact tag**, supplying the same `tag` input. The default `publish=false` validates
-and saves packages for review. Set `publish=true` only when publication has been
-requested. The native workflow itself is reusable and cannot be dispatched
-directly.
-
-`scripts/package_registry.py check dist/packages` checks version availability
-and detects conflicting bytes before any upload. It does not prove authorization
-to publish. `publish` submits the four platform packages before the launcher and
-skips identical existing versions. `verify` later checks that every public
-package matches the staged bytes; registry propagation may delay visibility.
-Never replace a conflicting published version: prepare a new version instead.
+See [RELEASING.md](../RELEASING.md) for the complete destination list, required
+npm OIDC configuration, branch-safe preflight dispatch, authorization gates and
+partial publication recovery. `publish-packages.yml` builds all native and npm
+assets before publication and finalizes GitHub only after all npm packages verify.
+Use `scripts/release_preflight.py` for release lifecycle checks; the lower-level
+`scripts/package_registry.py` remains available for exact staged-byte checks.

@@ -28,7 +28,7 @@ func testClient(t *testing.T, socket string) *http.Client {
 	}}
 }
 
-func startWorker(t *testing.T, run RunFunc) (*http.Client, string) {
+func startWorker(t *testing.T, run RunFunc) (*http.Client, string, <-chan error) {
 	t.Helper()
 	base := os.TempDir()
 	if runtime.GOOS == "darwin" && len(filepath.Join(base, "worker.sock")) > 90 {
@@ -44,6 +44,7 @@ func startWorker(t *testing.T, run RunFunc) (*http.Client, string) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, socket, Initialize{Protocol: 1, MinimumProtocol: 1, Bot: "test-bot", Version: "1.2.3", Capabilities: []string{"run", "progress"}}, run, nil)
+		close(done)
 	}()
 	client := testClient(t, socket)
 	for range 50 {
@@ -55,7 +56,7 @@ func startWorker(t *testing.T, run RunFunc) (*http.Client, string) {
 					cancel()
 					_ = <-done
 				})
-				return client, socket
+				return client, socket, done
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -65,11 +66,11 @@ func startWorker(t *testing.T, run RunFunc) (*http.Client, string) {
 		t.Fatalf("worker failed: %v", err)
 	}
 	t.Fatal("worker did not become ready")
-	return nil, ""
+	return nil, "", nil
 }
 
 func TestInitializeAndVersionedRunStream(t *testing.T) {
-	client, _ := startWorker(t, func(ctx context.Context, request Request, progress func(Progress)) (Result, error) {
+	client, _, _ := startWorker(t, func(ctx context.Context, request Request, progress func(Progress)) (Result, error) {
 		if request.Protocol != 1 || request.Remote != "https://example.invalid/repo.git" {
 			return Result{}, errors.New("invalid request")
 		}
@@ -111,7 +112,7 @@ func TestInitializeAndVersionedRunStream(t *testing.T) {
 }
 
 func TestRunRequestRejectsUnknownFieldsAndTrailingData(t *testing.T) {
-	client, _ := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
+	client, _, _ := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
 		return Result{}, nil
 	})
 	for _, body := range []string{`{"protocol":1,"unknown":true}`, `{"protocol":1} {}`} {
@@ -128,7 +129,7 @@ func TestRunRequestRejectsUnknownFieldsAndTrailingData(t *testing.T) {
 }
 
 func TestSocketIsPrivate(t *testing.T) {
-	_, socket := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
+	_, socket, _ := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
 		return Result{}, nil
 	})
 	info, err := os.Stat(socket)
@@ -141,7 +142,7 @@ func TestSocketIsPrivate(t *testing.T) {
 }
 
 func TestShutdownEndpointStopsServe(t *testing.T) {
-	client, _ := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
+	client, _, _ := startWorker(t, func(context.Context, Request, func(Progress)) (Result, error) {
 		return Result{}, nil
 	})
 	response, err := client.Post("http://worker/v1/shutdown", "application/json", nil)
@@ -200,3 +201,64 @@ func TestResearchRequestStrictDecoding(t *testing.T) {
 }
 
 func intPointer(n int) *int { return &n }
+
+func TestShutdownDrainsActiveRun(t *testing.T) {
+	shutdownRequested := make(chan struct{})
+	client, _, done := startWorker(t, func(ctx context.Context, _ Request, progress func(Progress)) (Result, error) {
+		progress(Progress{Phase: "investigating", Task: "shutdown fixture"})
+		select {
+		case <-shutdownRequested:
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		}
+		// Keep the stream active beyond the former five-second shutdown deadline.
+		timer := time.NewTimer(7 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return Result{}, nil
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		}
+	})
+	client.Timeout = 15 * time.Second
+	response, err := client.Post("http://worker/v1/runs", "application/json", strings.NewReader(`{"protocol":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	decoder := json.NewDecoder(response.Body)
+	var event Event
+	if err := decoder.Decode(&event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "progress" || event.Seq != 1 {
+		t.Fatalf("wrong initial event: %#v", event)
+	}
+	shutdown, err := client.Post("http://worker/v1/shutdown", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = shutdown.Body.Close()
+	close(shutdownRequested)
+	if shutdown.StatusCode != http.StatusAccepted {
+		t.Fatalf("shutdown returned HTTP %d", shutdown.StatusCode)
+	}
+	if err := decoder.Decode(&event); err != nil {
+		t.Fatalf("shutdown interrupted active stream: %v", err)
+	}
+	if event.Type != "complete" || event.Seq != 2 {
+		t.Fatalf("wrong terminal event: %#v", event)
+	}
+	if err := decoder.Decode(&event); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected clean stream EOF, got %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("worker shutdown failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not exit after draining the stream")
+	}
+}

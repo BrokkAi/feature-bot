@@ -148,10 +148,12 @@ func Serve(ctx context.Context, socketPath string, info Initialize, run RunFunc,
 		}
 		return err
 	case <-s.stop:
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdown); err != nil {
+		// Protocol shutdown drains active streams for as long as they need.
+		// Canceling Serve's context can still interrupt that drain.
+		if err := httpServer.Shutdown(ctx); err != nil {
 			_ = httpServer.Close()
+			<-serveDone
+			return err
 		}
 		<-serveDone
 		return nil
