@@ -18,7 +18,7 @@ import (
 // Exercise the bot's real subprocess adapter against independent JSON wire
 // fixtures, so schema or client-host migrations cannot be hidden by a mock Agent.
 func TestACPAgentProcess(t *testing.T) {
-	for _, scenario := range []string{"success", "setup-error", "cancel"} {
+	for _, scenario := range []string{"success", "thought-level-id", "reasoning-effort-id", "category-priority", "legacy-priority", "effort-unavailable", "effort-unconfirmed", "effort-wrong-category", "setup-error", "cancel"} {
 		t.Run(scenario, func(t *testing.T) {
 			workspace, state := t.TempDir(), t.TempDir()
 			a := agentProcess{config: Config{Directory: workspace, StateDirectory: state, Agent: AgentConfig{
@@ -51,9 +51,18 @@ func TestACPAgentProcess(t *testing.T) {
 			answer, err := a.Execute(ctx, "research this repository")
 			var setup *runner.SetupError
 			switch scenario {
-			case "success":
+			case "success", "thought-level-id", "reasoning-effort-id", "category-priority", "legacy-priority":
 				if err != nil || answer != "first second" {
 					t.Fatalf("answer=%q, err=%v", answer, err)
+				}
+			case "effort-unavailable", "effort-unconfirmed", "effort-wrong-category":
+				want := map[string]string{
+					"effort-unavailable":    "unknown thought_level",
+					"effort-unconfirmed":    "agent did not confirm thought_level",
+					"effort-wrong-category": "agent does not advertise ACP reasoning effort selection",
+				}[scenario]
+				if answer != "" || !errors.As(err, &setup) || !strings.Contains(err.Error(), want) {
+					t.Fatalf("expected setup error containing %q, got answer=%q, err=%v", want, answer, err)
 				}
 			case "setup-error":
 				if !errors.As(err, &setup) || !strings.Contains(err.Error(), "fixture setup failure") {
@@ -80,7 +89,10 @@ func TestACPAgentProcess(t *testing.T) {
 			if !strings.Contains(string(data), `"session_end"`) {
 				t.Fatalf("missing session end: %s", data)
 			}
-			if scenario == "success" {
+			if strings.HasPrefix(scenario, "effort-") && strings.Contains(string(data), "research this repository") {
+				t.Fatalf("prompt sent after effort setup failure: %s", data)
+			}
+			if answer == "first second" {
 				for _, want := range []string{"research this repository", "first ", "second", "permission_request"} {
 					if !strings.Contains(string(data), want) {
 						t.Errorf("transcript missing %q", want)
@@ -180,7 +192,17 @@ func runACPWireFixture(t *testing.T, scenario string) {
 		return map[string]any{"id": id, "name": id, "type": "select", "category": category, "currentValue": value, "options": []any{map[string]any{"value": value, "name": value}}}
 	}
 	model := option("model", "model", "test-model")
-	effort := option("effort", "thought_level", "high")
+	effortID := "effort"
+	if scenario == "thought-level-id" || scenario == "legacy-priority" || strings.HasPrefix(scenario, "effort-") {
+		effortID = "thought_level"
+	} else if scenario == "reasoning-effort-id" {
+		effortID = "reasoning_effort"
+	}
+	effort := option(effortID, "thought_level", "high")
+	effort["currentValue"] = "low"
+	if effortID != "effort" {
+		delete(effort, "category")
+	}
 	reply(session, map[string]any{"sessionId": "fixture-session", "modes": map[string]any{"currentModeId": "research", "availableModes": []any{map[string]any{"id": "research", "name": "Research"}}}, "configOptions": []any{model}})
 	mode := receive("session/set_mode")
 	require(mode.Params["modeId"], "research")
@@ -189,11 +211,46 @@ func runACPWireFixture(t *testing.T, scenario string) {
 	require(selection.Params["configId"], "model")
 	require(selection.Params["value"], "test-model")
 	// Effort becomes available only after the model selection is acknowledged.
-	reply(selection, map[string]any{"configOptions": []any{model, effort}})
+	options := []any{model, effort}
+	if scenario == "category-priority" || scenario == "legacy-priority" {
+		legacy := option("thought_level", "", "high")
+		delete(legacy, "category")
+		reasoning := option("reasoning_effort", "", "high")
+		delete(reasoning, "category")
+		if scenario == "category-priority" {
+			options = []any{reasoning, legacy, model, effort}
+		} else {
+			options = []any{reasoning, model, effort}
+		}
+	}
+	if scenario == "effort-unavailable" {
+		effort["options"] = []any{map[string]any{"value": "low", "name": "low"}}
+	} else if scenario == "effort-wrong-category" {
+		effort["category"] = "unrelated"
+	}
+	reply(selection, map[string]any{"configOptions": options})
+	if scenario == "effort-unavailable" || scenario == "effort-wrong-category" {
+		// No selection or prompt may be sent after local validation fails.
+		var unexpected message
+		if err := decoder.Decode(&unexpected); err != io.EOF {
+			t.Fatalf("unexpected request after invalid effort: %+v, err=%v", unexpected, err)
+		}
+		return
+	}
 	selection = receive("session/set_config_option")
-	require(selection.Params["configId"], "effort")
+	require(selection.Params["configId"], effortID)
 	require(selection.Params["value"], "high")
-	reply(selection, map[string]any{"configOptions": []any{model, effort}})
+	if scenario != "effort-unconfirmed" {
+		effort["currentValue"] = "high"
+	}
+	reply(selection, map[string]any{"configOptions": options})
+	if scenario == "effort-unconfirmed" {
+		var unexpected message
+		if err := decoder.Decode(&unexpected); err != io.EOF {
+			t.Fatalf("unexpected request after unconfirmed effort: %+v, err=%v", unexpected, err)
+		}
+		return
+	}
 	prompt := receive("session/prompt")
 	require(prompt.Params["sessionId"], "fixture-session")
 	if !strings.Contains(string(prompt.Params["prompt"]), "research this repository") {
